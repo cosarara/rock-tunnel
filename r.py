@@ -283,10 +283,14 @@ class Game():
         return False
 
     def draw(self):
-        map, stdscr = self.map, self.stdscr
+        import visibility
+        map, stdscr = visibility.darken(self.map, self.p.x, self.p.y), self.stdscr
         for y, row in enumerate(map):
             for x, ch in enumerate(row):
-                stdscr.addch(y, x, ch)
+                if len(ch) > 1:
+                    stdscr.addch(y, x, ch[0], curses.color_pair(int(ch[1])))
+                else:
+                    stdscr.addch(y, x, ch[0])
         self.draw_entities()
         self.p.draw_stats()
 
@@ -333,16 +337,33 @@ class Game():
         self.msgwait(msg)
         self.alive = False
 
+    def level_up(self):
+        if self.map[self.p.y][self.p.x] == '<':
+            return True
+        return False
+    def level_down(self):
+        pass
+
+    def new_level(self):
+        map = [[" " for x in range(self.COLS)] for y in range(self.ROWS)]
+        x, y = dungeon.dig(map)
+        self.map = map
+        self.monsters = []
+        self.spawn_monsters()
+        return x, y
+
     def main(self, stdscr):
+        curses.curs_set(False)
+        curses.start_color()
+
+        for i in range(7):
+            curses.init_pair(i+1, i, 7-i)
+
         self.stdscr = stdscr
         stdscr.clear()
-        map = [[" " for x in range(self.COLS)] for y in range(self.ROWS)]
-        self.map = map
-        x, y = dungeon.dig(map)
+        x, y = self.new_level()
         self.p = Player(self, map, "@", "Pikachu", x, y)
         self.alive = True
-        self.spawn_monsters()
-        curses.curs_set(False)
         while self.alive:
             self.draw()
             stdscr.refresh()
@@ -363,6 +384,8 @@ class Game():
                  'u': self.move_ur,
                  'b': self.move_dl,
                  'n': self.move_dr,
+                 '<': self.level_up,
+                 '>': self.level_down,
                  's': lambda : True,
                  }
             if not (k in a and a[k]()):
