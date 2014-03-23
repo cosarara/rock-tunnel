@@ -1,5 +1,7 @@
 import sys
 import curses
+import random
+import math
 from random import randint, sample
 import dungeon
 
@@ -15,9 +17,66 @@ class Monster():
         self.y = y
         self.ch = ch
         self.name = name
-        self.hp = 20
+        self.hp = 0
+
+        self.max_hp = 0
+        self.attack = 0
+        self.defense = 0
+        self.spattack = 0
+        self.spdefense = 0
+        self.vel = 0
+
+        self.base_max_hp = 40
+        self.base_attack = 45
+        self.base_defense = 35
+        self.base_spattack = 30
+        self.base_spdefense = 40
+        self.base_vel = 55
+
+        self.level = 5
+
+        self.calc_stats()
+
         self.aggressive = False
         self.new_dest()
+
+        self.hit_handicap = 0.2
+        phy = lambda p : (lambda m : m.be_hit(p * self.hit_handicap))
+        def leech(p):
+            def f(m):
+                m.be_hit(p * self.hit_handicap)
+                self.get_hp(p * self.hit_handicap * 0.5)
+            return f
+        self.battle_moves = {
+                'Leech Life': leech(40),
+                #'Supersonic': ui(0),
+                'Bite': phy(60),
+                }
+
+    def draw(self):
+        self.game.stdscr.addch(self.y, self.x, self.ch)
+
+    def calc_stat(self, base):
+        floor = math.floor
+        # Actual function is:
+        # S = floor(floor((2 * B + I + E) * L / 100 + 5) * N)
+        return floor((2 * base + 15 + self.level*2) * self.level / 100 + 5)
+
+    def calc_stat_hp(self, base):
+        floor = math.floor
+        # Actual function is:
+        # S = floor((2 * B + I + E) * L / 100 + L + 10)
+        return floor((2 * base + 15 + self.level*2) * self.level / 100
+                     + self.level + 10)
+
+    def calc_stats(self):
+        self.attack = self.calc_stat(self.base_attack)   
+        self.defense = self.calc_stat(self.base_defense)   
+        self.spattack = self.calc_stat(self.base_spattack)   
+        self.spdefense = self.calc_stat(self.base_spdefense)   
+        self.vel = self.calc_stat(self.base_vel)   
+        self.max_hp = self.calc_stat_hp(self.base_max_hp)   
+        self.hp = self.max_hp
     
     def move(self):
         if self.aggressive:
@@ -55,21 +114,133 @@ class Monster():
     def aggressive_move(self):
         pass
 
-    def attack(self):
+    def clear_stats(self):
+        h, w = self.game.stdscr.getmaxyx()
+        c = self.game.COLS
+        self.game.stdscr.addstr(10, c, " "*(w-c-1))
+
+    def draw_stats(self):
+        self.clear_stats()
+        c = self.game.COLS
+        self.game.stdscr.addstr(10, c, "M HP: {}".format(self.hp))
+
+    def battle(self):
+        self.game.msgwait("OMG! {} wants to battle!".format(self.name))
+        self.draw_stats()
         while self.hp > 0:
-            self.game.msgwait("OMG! {} wants to battle!".format(self.name))
             self.game.msg("What will you do? (a)ttack, (p)okemon, (i)tem or (r)un?")
             k = self.game.stdscr.getkey()
             if k == 'r':
                 self.game.msg("You ran like a coward...")
                 break
             a = {
-                    'a': lambda : self.game.attack(self),
+                    'a': lambda : self.game.p.do_attack(self),
                     'p': lambda : True,
                     'i': self.game.open_inventory,
             }
             if k in a:
                 a[k]()
+                self.draw_stats()
+            else:
+                continue
+            if self.hp <= 0:
+                break
+            self.hit(self.game.p)
+            if self.game.p.hp == 0:
+                self.game.die("You've been killed by a {}".format(self.name))
+                break
+            self.game.p.draw_stats()
+            self.draw_stats()
+
+        if self.hp == 0:
+            self.game.msgwait("{} dies...".format(self.name))
+            self.clear_stats()
+            del self.game.monsters[self.game.monsters.index(self)]
+
+    def be_hit(self, v):
+        ''' be hit '''
+        self.hp -= v
+        self.fix_hp()
+
+    def get_hp(self, v):
+        self.hp += v
+        self.fix_hp()
+
+    def fix_hp(self):
+        if self.hp > self.max_hp:
+            self.hp = self.max_hp
+        if self.hp < 0:
+            self.hp = 0
+        self.hp = math.floor(self.hp)
+
+    def hit(self, m):
+        a = random.choice(list(self.battle_moves.keys()))
+        self.game.msgwait("Wild {} uses {}!".format(self.name, a))
+        self.battle_moves[a](m)
+        m.fix_hp()
+
+class Player(Monster):
+    def __init__(self, game, map, ch, name, x, y):
+        self.game = game
+        self.map = map
+        self.x = x
+        self.y = y
+        self.ch = ch
+        self.name = name
+        self.hp = 0
+
+        self.max_hp = 0
+        self.attack = 0
+        self.defense = 0
+        self.spattack = 0
+        self.spdefense = 0
+        self.vel = 0
+
+        self.base_max_hp = 35
+        self.base_attack = 55
+        self.base_defense = 30
+        self.base_spattack = 50
+        self.base_spdefense = 40
+        self.base_vel = 90
+
+        self.level = 5
+
+        self.calc_stats()
+
+        self.hit_handicap = 0.25
+        phy = lambda p : (lambda m : m.be_hit(p * self.hit_handicap))
+        self.battle_moves = {
+                'Quick attack': phy(40),
+                'Shock Wave': phy(40),
+                'Iron tail': phy(100),
+                'Thunder': phy(120),
+                }
+
+    def do_attack(self, m):
+        while True:
+            moves = sorted(self.battle_moves)
+            self.game.msg("Attack:\t(1) {} (2) {}\n\t(3) {} (4) {}"\
+                        .format(*(a for a in moves)))
+            k = self.game.stdscr.getkey()
+            try:
+                move = moves[int(k)-1]
+                self.game.msgwait("You use {}!".format(move))
+                self.battle_moves[move](m)
+            except ValueError:
+                continue
+            break
+
+    def be_hit(self, v):
+        self.hp -= v
+
+    def clear_stats(self):
+        h, w = self.game.stdscr.getmaxyx()
+        c = self.game.COLS
+        self.game.stdscr.addstr(0, c, " "*(w-c-1))
+
+    def draw_stats(self):
+        self.clear_stats()
+        self.game.stdscr.addstr(0, self.game.COLS, "HP: {}".format(self.hp))
 
 class Game():
     COLS = 80
@@ -87,6 +258,16 @@ class Game():
 
         self.monsters = []
 
+        #self.hp = 20
+        #self.hit_handicap = 0.2
+        #phy = lambda p : (lambda m : m.be_hit(p * self.hit_handicap))
+        #self.battle_moves = {
+        #        'Quick attack': phy(40),
+        #        'Shock Wave': phy(40),
+        #        'Iron tail': phy(100),
+        #        'Thunder': phy(120),
+        #        }
+
     def spawn_monsters(self):
         for i in range(randint(0, 5)):
             self.monsters.append(Monster(self, self.map, 'd', 'Wild Zubat'))
@@ -96,11 +277,9 @@ class Game():
             m.move()
 
     def entity_in_pos(self, x, y):
-        for m in self.monsters:
+        for m in self.monsters + [self.p]:
             if m.x == x and m.y == y:
                 return m
-        if self.x == x and self.y == y:
-            return True
         return False
 
     def draw(self):
@@ -109,37 +288,39 @@ class Game():
             for x, ch in enumerate(row):
                 stdscr.addch(y, x, ch)
         self.draw_entities()
+        self.p.draw_stats()
 
     def draw_entities(self):
-        self.stdscr.addch(self.y, self.x, '@')
+        self.p.draw()
         for m in self.monsters:
-            self.stdscr.addch(m.y, m.x, m.ch)
+            m.draw()
 
     def move(self, x, y):
-        x += self.x
-        y += self.y
+        x += self.p.x
+        y += self.p.y
         if not (0 <= x <= self.COLS-1 and 0 <= y <= self.ROWS-1):
             return False
         e = self.entity_in_pos(x, y)
         if self.map[y][x] in walkable_tiles and not e:
-            self.x = x
-            self.y = y
+            self.p.x = x
+            self.p.y = y
             return True
         if isinstance(e, Monster):
-            e.attack()
+            e.battle()
             return True
         return False
 
     def clr_msg(self):
         h, w = self.stdscr.getmaxyx()
-        self.stdscr.addstr(self.ROWS, 0, ' '*w)
+        for i in range(h-self.ROWS-1):
+            self.stdscr.addstr(self.ROWS+i, 0, ' '*w)
 
     def msg(self, msg):
         self.clr_msg()
-        self.stdscr.addstr(self.ROWS+1, 0, ' '*w)
         self.stdscr.addstr(self.ROWS, 0, msg)
 
     def msgwait(self, msg):
+        self.clr_msg()
         self.stdscr.addstr(self.ROWS, 0, msg)
         self.stdscr.addstr(self.ROWS+1, 0, "--- Press any key to continue ---")
         self.stdscr.getkey()
@@ -148,19 +329,21 @@ class Game():
     def open_inventory(self):
         pass
 
-    def attack(self, m):
-        self.msg("Attack: (1) Quick attack (2) Thunder\n(3) Iron tail (4) Shock Wave")
-        k = self.stdscr.getkey()
+    def die(self, msg):
+        self.msgwait(msg)
+        self.alive = False
 
     def main(self, stdscr):
         self.stdscr = stdscr
         stdscr.clear()
         map = [[" " for x in range(self.COLS)] for y in range(self.ROWS)]
         self.map = map
-        self.x, self.y = dungeon.dig(map)
+        x, y = dungeon.dig(map)
+        self.p = Player(self, map, "@", "Pikachu", x, y)
+        self.alive = True
         self.spawn_monsters()
         curses.curs_set(False)
-        while True:
+        while self.alive:
             self.draw()
             stdscr.refresh()
             k = stdscr.getkey()
@@ -184,6 +367,8 @@ class Game():
                  }
             if not (k in a and a[k]()):
                 continue
+            if not self.alive:
+                break
             self.act_monsters()
 
 if __name__ == "__main__":
