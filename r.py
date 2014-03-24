@@ -257,16 +257,8 @@ class Game():
         self.move_dr = lambda : self.move(1, 1)
 
         self.monsters = []
-
-        #self.hp = 20
-        #self.hit_handicap = 0.2
-        #phy = lambda p : (lambda m : m.be_hit(p * self.hit_handicap))
-        #self.battle_moves = {
-        #        'Quick attack': phy(40),
-        #        'Shock Wave': phy(40),
-        #        'Iron tail': phy(100),
-        #        'Thunder': phy(120),
-        #        }
+        self.levels = []
+        self.level_i = 0
 
     def spawn_monsters(self):
         for i in range(randint(0, 5)):
@@ -291,13 +283,14 @@ class Game():
                     stdscr.addch(y, x, ch[0], curses.color_pair(int(ch[1])))
                 else:
                     stdscr.addch(y, x, ch[0])
-        self.draw_entities()
+        self.draw_entities(map)
         self.p.draw_stats()
 
-    def draw_entities(self):
+    def draw_entities(self, map):
         self.p.draw()
         for m in self.monsters:
-            m.draw()
+            if map[m.y][m.x] in '.#':
+                m.draw()
 
     def move(self, x, y):
         x += self.p.x
@@ -338,11 +331,44 @@ class Game():
         self.alive = False
 
     def level_up(self):
-        if self.map[self.p.y][self.p.x] == '<':
+        if self.map[self.p.y][self.p.x] != '<':
+            return False
+        if self.level_i == 0:
+            self.msgwait("You are next to the surface, "
+                    "but the entrance is locked.")
             return True
-        return False
+        self.levels[self.level_i] = self.pack_level()
+        self.level_i -= 1
+        l = self.levels[self.level_i]
+        self.unpack_level(l)
+        self.draw()
+        return True
+
     def level_down(self):
-        pass
+        if self.map[self.p.y][self.p.x] != '>':
+            return False
+        self.levels.append(self.pack_level())
+        self.level_i += 1
+        if self.level_i < len(self.levels):
+            l = self.levels[self.level_i]
+            self.unpack_level(l)
+            return True
+        self.p.x, self.p.y = self.new_level()
+        self.levels.append(self.pack_level())
+        self.draw()
+        return True
+
+    def pack_level(self):
+        return {
+            "map": self.map,
+            "monsters": self.monsters,
+            "pos": (self.p.x, self.p.y),
+            }
+
+    def unpack_level(self, l):
+        self.map = l["map"]
+        self.monsters = l["monsters"]
+        self.p.x, self.p.y = l["pos"]
 
     def new_level(self):
         map = [[" " for x in range(self.COLS)] for y in range(self.ROWS)]
