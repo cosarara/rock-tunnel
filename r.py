@@ -8,7 +8,7 @@ import dungeon
 walkable_tiles = '<>.#'
 
 class Monster():
-    def __init__(self, game, map, ch, name, x=None, y=None):
+    def __init__(self, game, map, ch, name, x=None, y=None, level=5):
         self.game = game
         if x is None or y is None:
             x, y = dungeon.get_floor_tile(map)
@@ -33,7 +33,8 @@ class Monster():
         self.base_spdefense = 40
         self.base_vel = 55
 
-        self.level = 5
+        self.base_exp = 49
+        self.level = level
 
         self.calc_stats()
 
@@ -75,8 +76,9 @@ class Monster():
         self.spattack = self.calc_stat(self.base_spattack)   
         self.spdefense = self.calc_stat(self.base_spdefense)   
         self.vel = self.calc_stat(self.base_vel)   
+        old_max_hp = self.max_hp
         self.max_hp = self.calc_stat_hp(self.base_max_hp)   
-        self.hp = self.max_hp
+        self.hp += self.max_hp - old_max_hp
     
     def move(self):
         if self.aggressive:
@@ -125,7 +127,9 @@ class Monster():
         self.game.stdscr.addstr(10, c, "M HP: {}".format(self.hp))
 
     def battle(self):
-        self.game.msgwait("OMG! {} wants to battle!".format(self.name))
+        self.game.msgwait(
+                "OMG! lvl {} {} wants to battle!".
+                format(self.level, self.name))
         self.draw_stats()
         while self.hp > 0:
             self.game.msg("What will you do? (a)ttack, (p)okemon, (i)tem or (r)un?")
@@ -155,6 +159,7 @@ class Monster():
         if self.hp == 0:
             self.game.msgwait("{} dies...".format(self.name))
             self.clear_stats()
+            self.game.p.give_exp(self)
             del self.game.monsters[self.game.monsters.index(self)]
 
     def be_hit(self, v):
@@ -204,6 +209,7 @@ class Player(Monster):
         self.base_vel = 90
 
         self.level = 5
+        self.exp = 0
 
         self.calc_stats()
 
@@ -215,6 +221,19 @@ class Player(Monster):
                 'Iron tail': phy(100),
                 'Thunder': phy(120),
                 }
+
+        self.hp_bonus = 0
+
+    def get_exp_needed(self):
+        return self.level**3
+
+    def give_exp(self, m):
+        self.exp += round(m.base_exp*m.level/7)
+        while self.exp > self.get_exp_needed():
+            self.level += 1
+            self.calc_stats()
+            self.game.msgwait("Level up! You are now at lvl. {}!".
+                                  format(self.level))
 
     def do_attack(self, m):
         while True:
@@ -241,6 +260,16 @@ class Player(Monster):
     def draw_stats(self):
         self.clear_stats()
         self.game.stdscr.addstr(0, self.game.COLS, "HP: {}".format(self.hp))
+        self.game.stdscr.addstr(1, self.game.COLS, "Level: {}".format(self.level))
+        e = self.get_exp_needed() - self.exp
+        self.game.stdscr.addstr(2, self.game.COLS, "Needed exp: {}".format(e))
+
+    def rest(self):
+        self.hp_bonus += 0.2
+        if self.hp_bonus >= 1:
+            self.hp += 1
+            self.hp_bonus = 0
+            self.fix_hp()
 
 class Game():
     COLS = 80
@@ -262,7 +291,8 @@ class Game():
 
     def spawn_monsters(self):
         for i in range(randint(0, 5)):
-            self.monsters.append(Monster(self, self.map, 'd', 'Wild Zubat'))
+            l = round(5 + self.level_i)
+            self.monsters.append(Monster(self, self.map, 'd', 'Zubat', level=l))
 
     def act_monsters(self):
         for m in self.monsters:
@@ -347,11 +377,12 @@ class Game():
     def level_down(self):
         if self.map[self.p.y][self.p.x] != '>':
             return False
-        self.levels.append(self.pack_level())
+        self.levels[self.level_i] = self.pack_level()
         self.level_i += 1
         if self.level_i < len(self.levels):
             l = self.levels[self.level_i]
             self.unpack_level(l)
+            self.draw()
             return True
         self.p.x, self.p.y = self.new_level()
         self.levels.append(self.pack_level())
@@ -389,6 +420,7 @@ class Game():
         stdscr.clear()
         x, y = self.new_level()
         self.p = Player(self, map, "@", "Pikachu", x, y)
+        self.levels.append(self.pack_level())
         self.alive = True
         while self.alive:
             self.draw()
@@ -419,6 +451,7 @@ class Game():
             if not self.alive:
                 break
             self.act_monsters()
+            self.p.rest()
 
 if __name__ == "__main__":
     game = Game()
