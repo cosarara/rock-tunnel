@@ -2,8 +2,13 @@ import sys
 import curses
 import random
 import math
+import pickle
 from random import randint, sample
+import sys
+import os
 import dungeon
+import dirs
+import menu
 
 walkable_tiles = '<>.#'
 
@@ -42,6 +47,10 @@ class Monster():
         self.new_dest()
 
         self.hit_handicap = 0.2
+        self.setup_moves()
+
+    def setup_moves(self):
+        # Separated coz lambdas involved and pickle
         phy = lambda p : (lambda m : m.be_hit(p * self.hit_handicap))
         def leech(p):
             def f(m):
@@ -214,6 +223,10 @@ class Player(Monster):
         self.calc_stats()
 
         self.hit_handicap = 0.25
+
+        self.setup_moves()
+
+    def setup_moves(self):
         phy = lambda p : (lambda m : m.be_hit(p * self.hit_handicap))
         self.battle_moves = {
                 'Quick attack': phy(40),
@@ -288,6 +301,8 @@ class Game():
         self.monsters = []
         self.levels = []
         self.level_i = 0
+
+        self.game_loaded = 0
 
     def spawn_monsters(self):
         for i in range(randint(0, 5)):
@@ -399,6 +414,10 @@ class Game():
     def unpack_level(self, l):
         self.map = l["map"]
         self.monsters = l["monsters"]
+        # Fix monsters coz pickle fucks them
+        for m in self.monsters:
+            m.game = self
+            m.setup_moves()
         self.p.x, self.p.y = l["pos"]
 
     def new_level(self):
@@ -409,27 +428,70 @@ class Game():
         self.spawn_monsters()
         return x, y
 
+    def save_game(self):
+        self.levels[self.level_i] = self.pack_level()
+        save = {
+                "levels": self.levels,
+                "level_i": self.level_i,
+                "p": self.p
+            }
+        fn = os.path.join(dirs.get_save_dir("cosarara", "pokerl"),
+                          "save.pickle")
+        import copyreg
+        from types import FunctionType
+
+        copyreg.pickle(FunctionType, lambda x : (str, ("STUB",)))
+        copyreg.pickle(type(self.stdscr), lambda x : (str, ("STUB",)))
+        with open(fn, "wb") as f:
+            pickle.dump(save, f)
+
+    def load_game(self):
+        fn = os.path.join(dirs.get_save_dir("cosarara", "pokerl"),
+                          "save.pickle")
+        if not os.path.exists(fn):
+            return None
+        with open(fn, "rb") as f:
+            save = pickle.load(f)
+        self.p = save["p"]
+        self.p.game = self
+        self.p.setup_moves()
+        self.levels = save["levels"]
+        self.level_i = save["level_i"]
+        self.unpack_level(self.levels[self.level_i])
+        self.game_loaded = True
+
     def main(self, stdscr):
+        stdscr.clear()
         curses.curs_set(False)
         curses.start_color()
+        self.stdscr = stdscr
+        menu_r = menu.display_menu(stdscr)
+        if menu_r is None:
+            return
+        elif menu_r == "cont":
+            self.load_game()
 
         for i in range(7):
             curses.init_pair(i+1, i, 7-i)
 
-        self.stdscr = stdscr
         stdscr.clear()
-        x, y = self.new_level()
-        self.p = Player(self, map, "@", "Pikachu", x, y)
-        self.levels.append(self.pack_level())
+
+        if not self.game_loaded:
+            x, y = self.new_level()
+            self.p = Player(self, map, "@", "Pikachu", x, y)
+            self.levels.append(self.pack_level())
+            menu.show_big_msg(stdscr, menu.intro_txt)
         self.alive = True
         while self.alive:
             self.draw()
             stdscr.refresh()
             k = stdscr.getkey()
             if k == 'q':
-                #stdscr.addstr(0, 0, "Do you want to quit? [y/n]")
-                #if stdscr.getkey() in 'yY':
-                break
+                stdscr.addstr(0, 0, "Do you want to quit without saving? [y/n]")
+                if stdscr.getkey() in 'yY':
+                    break
+            if k == 'S':
+                return self.save_game()
             a = {'KEY_UP': self.move_up,
                  'k': self.move_up,
                  'KEY_DOWN': self.move_down,
@@ -453,8 +515,11 @@ class Game():
             self.act_monsters()
             self.p.rest()
 
+
 if __name__ == "__main__":
     game = Game()
+    if "--continue" in sys.argv:
+        game.load_game()
     curses.wrapper(game.main)
 
 
