@@ -226,6 +226,8 @@ class Player(Monster):
 
         self.setup_moves()
 
+        self.inventory = []
+
     def setup_moves(self):
         phy = lambda p : (lambda m : m.be_hit(p * self.hit_handicap))
         self.battle_moves = {
@@ -272,10 +274,14 @@ class Player(Monster):
 
     def draw_stats(self):
         self.clear_stats()
-        self.game.stdscr.addstr(0, self.game.COLS, "HP: {}".format(self.hp))
-        self.game.stdscr.addstr(1, self.game.COLS, "Level: {}".format(self.level))
         e = self.get_exp_needed() - self.exp
-        self.game.stdscr.addstr(2, self.game.COLS, "Needed exp: {}".format(e))
+        stats = (
+                ("HP: {}", self.hp),
+                ("Level: {}", self.level),
+                ("Needed exp: {}", e),
+                )
+        for i, s in enumerate(stats):
+            self.game.stdscr.addstr(i, self.game.COLS, s[0].format(s[1]))
 
     def rest(self):
         self.hp_bonus += 0.2
@@ -338,6 +344,8 @@ class Game():
                 m.draw()
 
     def move(self, x, y):
+        ''' Returns False if can't move, True if moved,
+            e if monster battled '''
         x += self.p.x
         y += self.p.y
         if not (0 <= x <= self.COLS-1 and 0 <= y <= self.ROWS-1):
@@ -349,7 +357,7 @@ class Game():
             return True
         if isinstance(e, Monster):
             e.battle()
-            return True
+            return e
         return False
 
     def clr_msg(self):
@@ -369,7 +377,20 @@ class Game():
         self.clr_msg()
 
     def open_inventory(self):
-        pass
+        class Item():
+            def __init__(self):
+                self.name = 'potatoe'
+        if not self.p.inventory:
+            self.msgwait("You have nothing.")
+            return False
+        x = 5
+        y = 5
+        self.stdscr.addstr(y-1, x, "Your things:")
+        for item in self.p.inventory:
+            self.stdscr.addstr(y, x, item.name)
+            y += 1
+        self.stdscr.getkey()
+        self.draw()
 
     def die(self, msg):
         self.msgwait(msg)
@@ -493,23 +514,37 @@ class Game():
             if k == 'S':
                 return self.save_game()
             a = {'KEY_UP': self.move_up,
-                 'k': self.move_up,
                  'KEY_DOWN': self.move_down,
-                 'j': self.move_down,
                  'KEY_LEFT': self.move_left,
-                 'h': self.move_left,
                  'KEY_RIGHT': self.move_right,
+                 'h': self.move_left,
+                 'j': self.move_down,
+                 'k': self.move_up,
                  'l': self.move_right,
                  'y': self.move_ul,
                  'u': self.move_ur,
                  'b': self.move_dl,
                  'n': self.move_dr,
+                 'i': self.open_inventory,
                  '<': self.level_up,
                  '>': self.level_down,
                  's': lambda : True,
                  }
-            if not (k in a and a[k]()):
-                continue
+            if k in a:
+                if not a[k]():
+                    continue
+            else:
+                if k.lower() in a:
+                    r = a[k.lower()]()
+                    while r is True:
+                        self.act_monsters()
+                        self.p.rest()
+                        self.draw()
+                        r = a[k.lower()]()
+                    if r is False:
+                        continue
+                else:
+                    continue
             if not self.alive:
                 break
             self.act_monsters()
