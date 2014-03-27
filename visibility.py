@@ -3,7 +3,38 @@ import random
 import math
 import sys
 
+# FIXME: I know, I know, code duplication
+
 opaque = '-| '
+
+def plot_path(sx, sy, dx, dy):
+    """ returns list containing all coords plotted """
+    l = []
+    def plot(x, y):
+        l.append((x, y))
+
+    distx = dx - sx
+    disty = dy - sy
+
+    try: 
+        m = (disty/distx)
+    except ZeroDivisionError:
+        if sy < dy:
+            for y in range(disty):
+                plot(sx, sy+y)
+        else:
+            for y in range(abs(disty)):
+                plot(sx, sy-y)
+        return l
+    if m > 1 or m < -1:
+        for y in reversed(range(dy, sy)) if sy > dy else range(sy, dy):
+            x = round(sx + 1/m * (y - sy))
+            plot(x, y)
+    else:
+        for x in reversed(range(dx, sx)) if sx > dx else range(sx, dx):
+            y = round(sy + m * (x - sx))
+            plot(x, y)
+    return l
 
 def see_path(map, darkmap, sx, sy, dx, dy):
     color = random.randint(0, 6) + 1

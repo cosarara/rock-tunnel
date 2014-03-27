@@ -1,27 +1,29 @@
 import sys
 import curses
-import random
 import math
 import pickle
+import random
 from random import randint, sample
 import sys
 import os
 import dungeon
 import dirs
 import menu
+import visibility
+import mons
 
 walkable_tiles = '<>.#'
 
 class Monster():
-    def __init__(self, game, map, ch, name, x=None, y=None, level=5):
+    def __init__(self, game, map, x=None, y=None, level=5):
         self.game = game
         if x is None or y is None:
             x, y = dungeon.get_floor_tile(map)
         self.map = map
         self.x = x
         self.y = y
-        self.ch = ch
-        self.name = name
+        self.ch = 'z'
+        self.name = 'Zubat'
         self.hp = 0
 
         self.max_hp = 0
@@ -43,7 +45,7 @@ class Monster():
 
         self.calc_stats()
 
-        self.aggressive = False
+        self.aggressive = random.random() < 0.3
         self.new_dest()
 
         self.setup_moves()
@@ -77,10 +79,12 @@ class Monster():
 
     def calc_stat_hp(self, base):
         floor = math.floor
-        # Actual function is:
-        # S = floor((2 * B + I + E) * L / 100 + L + 10)
-        return floor((2 * base + 15 + self.level*2) * self.level / 100
-                     + self.level + 10)
+        sqrt = math.sqrt
+        ev = 0xFF*(self.level-5)/95
+        if ev < 0:
+            ev = 0
+        iv = 10
+        return floor((iv + base + sqrt(ev)/8 + 50) * self.level / 50 + 10)
 
     def calc_stats(self):
         self.attack = self.calc_stat(self.base_attack)   
@@ -92,41 +96,65 @@ class Monster():
         self.max_hp = self.calc_stat_hp(self.base_max_hp)   
         self.hp += self.max_hp - old_max_hp
     
-    def move(self):
-        if self.aggressive:
-            return self.aggressive_move()
-        return self.random_move()
-
     def new_dest(self):
         self.dx, self.dy = dungeon.get_floor_tile(self.map)
 
     def is_walkable(self, x, y):
-        return self.map[y][x] in walkable_tiles and not game.entity_in_pos(x, y)
+        return self.map[y][x] in walkable_tiles and not self.game.entity_in_pos(x, y)
 
-    def random_move(self, n=0):
+    def move(self, n=0):
+        if self.aggressive:
+            self.aggressive_dest()
         sx = self.x
         sy = self.y
-        if randint(0, 100) < 4 or sx == self.dx and sy == self.dy:
+        if ((randint(0, 100) < 4 and not self.aggressive) or 
+          (sx == self.dx and sy == self.dy)):
             self.new_dest()
         distx = self.dx - sx
         disty = self.dy - sy
         dirx = distx // abs(distx) if distx != 0 else 0
         diry = disty // abs(disty) if disty != 0 else 0
         r = randint(0, 2)
-        if abs(distx) > abs(disty) and self.is_walkable(sx+dirx, sy):
+        if self.try_attacking():
+            pass
+        elif abs(distx) > abs(disty) and self.is_walkable(sx+dirx, sy):
             sx += dirx
         elif self.is_walkable(sx, sy+diry):
             sy += diry
-        else:
+        else: 
             self.new_dest()
             if n < 30:
-                self.random_move(n+1)
+                self.move(n+1)
             return
         self.x = sx
         self.y = sy
 
-    def aggressive_move(self):
-        pass
+    def try_attacking(self):
+        if not self.aggressive:
+            return False
+        p = self.game.p
+        distx = abs(p.x - self.x)
+        disty = abs(p.y - self.y)
+        if distx <= 1 and disty <= 1:
+            self.battle()
+            return True
+        return False
+
+    def aggressive_dest(self):
+        def map_objects(map, coordlist):
+            objects = []
+            for x, y in coordlist:
+                objects.append(map[y][x])
+            return objects
+
+        v = visibility
+        sx, sy = self.x, self.y
+        dx, dy = self.game.p.x, self.game.p.y
+        if sx == dx and sy == dy:
+            raise Exception("Player and monster are in the same spot!")
+        if not v.opaque in map_objects(self.map, v.plot_path(sx, sy, dx, dy)):
+            #self.game.msgwait("OMG!")
+            self.dx, self.dy = dx, dy
 
     def clear_stats(self):
         h, w = self.game.stdscr.getmaxyx()
@@ -139,6 +167,7 @@ class Monster():
         self.game.stdscr.addstr(10, c, "M HP: {}".format(self.hp))
 
     def battle(self):
+        self.game.draw()
         self.game.msgwait(
                 "OMG! lvl {} {} wants to battle!".
                 format(self.level, self.name))
@@ -197,13 +226,13 @@ class Monster():
         m.fix_hp()
 
 class Player(Monster):
-    def __init__(self, game, map, ch, name, x, y):
+    def __init__(self, game, map, x, y):
         self.game = game
         self.map = map
         self.x = x
         self.y = y
-        self.ch = ch
-        self.name = name
+        self.ch = '@'
+        self.name = "Pikachu"
         self.hp = 0
 
         self.max_hp = 0
@@ -315,9 +344,11 @@ class Game():
         self.game_loaded = 0
 
     def spawn_monsters(self):
-        for i in range(randint(0, 5)):
-            l = round(5 + self.level_i)
-            self.monsters.append(Monster(self, self.map, 'd', 'Zubat', level=l))
+        bl = round(5 + self.level_i)
+        for i in range(randint(2, 8)):
+            l = randint(bl-1, bl+1)
+            m = random.choice((Monster, mons.Golbat) if l > 15 else (Monster,))
+            self.monsters.append(m(self, self.map, level=l))
 
     def act_monsters(self):
         for m in self.monsters:
@@ -330,7 +361,6 @@ class Game():
         return False
 
     def draw(self):
-        import visibility
         map, stdscr = visibility.darken(self.map, self.p.x, self.p.y), self.stdscr
         for y, row in enumerate(map):
             for x, ch in enumerate(row):
@@ -503,7 +533,7 @@ class Game():
 
         if not self.game_loaded:
             x, y = self.new_level()
-            self.p = Player(self, map, "@", "Pikachu", x, y)
+            self.p = Player(self, map, x, y)
             self.levels.append(self.pack_level())
             menu.show_big_msg(stdscr, menu.intro_txt)
         self.alive = True
