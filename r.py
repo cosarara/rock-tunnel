@@ -173,11 +173,8 @@ class Monster():
                 format(self.level, self.name))
         self.draw_stats()
         while self.hp > 0:
-            self.game.msg("What will you do? (a)ttack, (p)okemon, (i)tem or (r)un?")
+            self.game.msg("What will you do? (a)ttack, (p)okemon or (i)tem?")
             k = self.game.stdscr.getkey()
-            if k == 'r':
-                self.game.msg("You ran like a coward...")
-                break
             a = {
                     'a': lambda : self.game.p.do_attack(self),
                     'p': lambda : True,
