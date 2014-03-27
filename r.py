@@ -46,16 +46,19 @@ class Monster():
         self.aggressive = False
         self.new_dest()
 
-        self.hit_handicap = 0.2
         self.setup_moves()
 
     def setup_moves(self):
         # Separated coz lambdas involved and pickle
-        phy = lambda p : (lambda m : m.be_hit(p * self.hit_handicap))
+        dmg = lambda p, at, de : ( ((((2 * self.level / 5 + 2) * at * p / de) /
+                                     50) + 2) * randint(85, 100) / 100 )
+        phy = lambda p : (lambda m : m.be_hit(dmg(p, self.attack, m.defense)))
+        spe = lambda p : (lambda m : m.be_hit(dmg(p, self.spattack, m.spdefense)))
         def leech(p):
             def f(m):
-                m.be_hit(p * self.hit_handicap)
-                self.get_hp(p * self.hit_handicap * 0.5)
+                d = dmg(p, self.attack, m.defense)
+                m.be_hit(d)
+                self.get_hp(round(d * 0.5))
             return f
         self.battle_moves = {
                 'Leech Life': leech(40),
@@ -222,19 +225,20 @@ class Player(Monster):
 
         self.calc_stats()
 
-        self.hit_handicap = 0.25
-
         self.setup_moves()
 
         self.inventory = []
 
     def setup_moves(self):
-        phy = lambda p : (lambda m : m.be_hit(p * self.hit_handicap))
+        dmg = lambda p, at, de : ( ((((2 * self.level / 5 + 2) * at * p / de) /
+                                     50) + 2) * randint(85, 100) / 100 )
+        phy = lambda p : (lambda m : m.be_hit(dmg(p, self.attack, m.defense)))
+        spe = lambda p : (lambda m : m.be_hit(dmg(p, self.spattack, m.spdefense)))
         self.battle_moves = {
                 'Quick attack': phy(40),
-                'Shock Wave': phy(40),
+                'Shock Wave': spe(40),
                 'Iron tail': phy(100),
-                'Thunder': phy(120),
+                'Thunder': spe(120),
                 }
 
         self.hp_bonus = 0
