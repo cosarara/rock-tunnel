@@ -173,18 +173,18 @@ class Monster():
                 format(self.level, self.name))
         self.draw_stats()
         while self.hp > 0:
-            self.game.msg("What will you do? (a)ttack, (p)okemon or (i)tem?")
-            k = self.game.stdscr.getkey()
-            a = {
-                    'a': lambda : self.game.p.do_attack(self),
-                    'p': lambda : True,
-                    'i': self.game.open_inventory,
-            }
-            if k in a:
-                a[k]()
-                self.draw_stats()
-            else:
-                continue
+            #self.game.msg("What will you do? (a)ttack, (i)tem?")
+            #k = self.game.stdscr.getkey()
+            #a = {
+            #        'a': lambda : self.game.p.do_attack(self),
+            #        #'i': self.game.open_inventory,
+            #}
+            #if k in a:
+            #    a[k]()
+            #    self.draw_stats()
+            #else:
+            #    continue
+            self.game.p.do_attack(self)
             if self.hp <= 0:
                 break
             self.hit(self.game.p)
@@ -293,6 +293,8 @@ class Player(Monster):
             except ValueError:
                 continue
             break
+        m.draw_stats()
+        self.draw_stats()
 
     def be_hit(self, v):
         self.hp -= v
@@ -411,16 +413,19 @@ class Game():
         class Item():
             def __init__(self):
                 self.name = 'potatoe'
-        if not self.p.inventory:
+        inv = self.p.inventory()
+        if not inv:
             self.msgwait("You have nothing.")
             return False
         x = 5
         y = 5
         self.stdscr.addstr(y-1, x, "Your things:")
-        for item in self.p.inventory:
-            self.stdscr.addstr(y, x, item.name)
-            y += 1
-        self.stdscr.getkey()
+        for i, item in enumerate(inv):
+            self.stdscr.addstr(y+i, x, str(i) + item.name)
+        self.stdscr.addstr(y+len(inv), x, "q - Close the inventory")
+        k = self.stdscr.getkey()
+        if k in inv:
+            pass
         self.draw()
 
     def die(self, msg):
@@ -556,7 +561,7 @@ class Game():
                  'u': self.move_ur,
                  'b': self.move_dl,
                  'n': self.move_dr,
-                 'i': self.open_inventory,
+                 #'i': self.open_inventory,
                  '<': self.level_up,
                  '>': self.level_down,
                  's': lambda : True,
